@@ -45,7 +45,8 @@ export class DiscourseCrawler {
   }
 
   async crawl(): Promise<void> {
-    // const forum = await this.getForum()
+    const forum = await this.getForum()
+    await this.crawlForum(forum)
   }
 
   private async getForum(): Promise<Forum> {
@@ -68,7 +69,7 @@ export class DiscourseCrawler {
       const categoryData = await this.limitedFetch(categoriesUrl.toString())
       const categoryList = categoryData.category_list
 
-      logger.info(`Categories: ${Object.keys(categoryList)}`)
+      logger.info(`Categories: ${Object.keys(categoryList.categories)}`)
 
       for (const category of categoryList.categories) {
         await this.db.createCategory({
@@ -108,7 +109,7 @@ export class DiscourseCrawler {
         let nextPageId: number
 
         if (lastPage === null) {
-          const urlObj = new URL(`/c/${category.category_id}.json`, category.topic_url)
+          const urlObj = new URL(`/c/${category.category_id}.json`, this.baseUrl)
           urlObj.searchParams.set('page', '0')
           url = urlObj.toString()
           nextPageId = 0
@@ -133,7 +134,7 @@ export class DiscourseCrawler {
           json: escapeJson(JSON.stringify(jsonPage)),
         })
 
-        for (const topic in topicList.topics) {
+        for (const topic of topicList.topics) {
           const existingTopic = await this.db.findTopicByCategoryIdAndTopicId(
             category.id!,
             topic.id,
