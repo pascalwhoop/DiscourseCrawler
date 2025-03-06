@@ -1,0 +1,59 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { DiscourseCrawler } from '../crawling'
+import { Database, Forum, Category, Topic } from '../database'
+import axios from 'axios'
+import { RateLimiterMemory } from 'rate-limiter-flexible'
+
+vi.mock('axios')
+vi.mock('../database')
+vi.mock('rate-limiter-flexible')
+
+describe('DiscourseCrawler', () => {
+  beforeEach(() => {
+    vi.clearAllMocks
+  })
+
+  afterEach(() => {
+    vi.resetAllMocks
+  })
+
+  describe('create', () => {
+    it('should create a new DiscourseCrawler instance', async () => {
+      const mockDb = { close: vi.fn() }
+
+      vi.mocked(Database.create).mockResolvedValue(mockDb as any)
+
+      const crawler = await DiscourseCrawler.create('https://test.com', 'test.db')
+
+      expect(Database.create).toHaveBeenCalledWith('test.db')
+      expect(crawler).toBeInstanceOf(DiscourseCrawler)
+    })
+  })
+
+  describe('limitedFetch', () => {
+    it('should fetch data with rate limiting', async () => {
+      const mockDb = { close: vi.fn() }
+      vi.mocked(Database.create).mockResolvedValue(mockDb as any)
+      vi.mocked(RateLimiterMemory.prototype.consume).mockResolvedValue({} as any)
+      vi.mocked(axios.get).mockResolvedValue({ data: { test: 'data' } })
+
+      const crawler = await DiscourseCrawler.create('https://test.com')
+      const result = await (crawler as any).limitedFetch('https://test.com')
+
+      expect(RateLimiterMemory.prototype.consume).toHaveBeenCalledWith('default')
+      expect(axios.get).toHaveBeenCalledWith('https://test.com')
+      expect(result).toEqual({ test: 'data' })
+    })
+
+    it('should handle fetch errors', async () => {
+      const mockDb = { close: vi.fn() }
+
+      vi.mocked(Database.create).mockResolvedValue(mockDb as any)
+      vi.mocked(RateLimiterMemory.prototype.consume).mockResolvedValue({} as any)
+      vi.mocked(axios.get).mockRejectedValue(new Error('Network error'))
+
+      const crawler = await DiscourseCrawler.create('https://test.com')
+      await expect((crawler as any).limitedFetch('https://test.com')).rejects.toThrow()
+    })
+  })
+})
