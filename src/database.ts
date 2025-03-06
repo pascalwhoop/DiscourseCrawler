@@ -1,18 +1,18 @@
 import { DuckDBInstance, DuckDBConnection } from '@duckdb/node-api';
 
-interface Forum {
+export interface Forum {
   id?: number;
   url: string;
   categories_crawled: boolean;
 }
 
-interface User {
+export interface User {
   id?: number;
   forum_id: number;
   json: string;
 }
 
-interface Category {
+export interface Category {
   id?: number;
   category_id: number;
   forum_id: number;
@@ -21,7 +21,7 @@ interface Category {
   pages_crawled: boolean;
 }
 
-interface Page {
+export interface Page {
   id?: number;
   page_id: number;
   category_id: number;
@@ -29,7 +29,7 @@ interface Page {
   json: string;
 }
 
-interface Topic {
+export interface Topic {
   id?: number;
   topic_id: number;
   category_id: number;
@@ -38,7 +38,7 @@ interface Topic {
   posts_crawled: boolean;
 }
 
-interface Post {
+export interface Post {
   id?: number;
   post_id: number;
   topic_id: number;
@@ -49,14 +49,20 @@ export class Database {
 
   private db: DuckDBInstance;
   private connection: DuckDBConnection;
-  private initialized: boolean = false;
+  private initialized: Boolean = false;
 
-  constructor() {
+  private constructor() {
   }
 
-  async init(databasePath: string = 'discourse.db') {
+  public static async create(dbPath: string = 'discourse.db'): Promise<Database> {
+    const instance = new Database()
+    await instance.init(dbPath)
+    return instance
+  }
+
+  async init(dbPath: string = 'discourse.db') {
     const config = {
-      path: databasePath,
+      path: dbPath,
     };
     //
     this.db = await DuckDBInstance.create(config.path);
@@ -279,6 +285,7 @@ export class Database {
     return reader.getRows() as Category[];
   }
 
+
   async findCategoryByCategoryIdAndForumId(categoryId: number, forumId: number): Promise<Category | null> {
     const reader = await this.connection.runAndReadAll(`
         SELECT *
@@ -345,7 +352,6 @@ export class Database {
         WHERE id = ?
     `);
   }
-
 
   async findTopicByCategoryIdAndTopicId(categoryId: number, topicId: number): Promise<Topic | null> {
     const reader = await this.connection.runAndReadAll(`
@@ -529,10 +535,4 @@ export class Database {
   }
 
 
-}
-
-export async function createDatabase(dbPath: string = 'discourse.db'): Promise<Database> {
-  const db = new Database();
-  await db.init(dbPath);
-  return db;
 }
