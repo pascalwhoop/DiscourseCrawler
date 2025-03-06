@@ -392,11 +392,14 @@ export class Database {
 
     values.push(id)
 
-    await this.connection.run(`
-        UPDATE forum
-        SET ${setStatements.join(', ')}
-        WHERE id = ?
-    `)
+    await this.connection.run(
+      `
+          UPDATE category
+          SET ${setStatements.join(', ')}
+          WHERE id = ?
+      `,
+      [...values],
+    )
   }
 
   async findTopicByCategoryIdAndTopicId(
@@ -482,11 +485,14 @@ export class Database {
 
     values.push(id)
 
-    await this.connection.runAndReadAll(`
-        UPDATE forum
+    await this.connection.runAndReadAll(
+      `
+        UPDATE topic
         SET ${setStatements.join(', ')}
         WHERE id = ?
-    `)
+    `,
+      [...values],
+    )
   }
 
   async findPostByPostIdAndTopicId(postId: number, topicId: number): Promise<Post | null> {

@@ -32,13 +32,27 @@ export class DiscourseCrawler {
     return new DiscourseCrawler(url, db, rateLimiter)
   }
 
-  private async limitedFetch(url: string): Promise<any> {
+  private async limitedFetch(url: string, retries = 3): Promise<any> {
     try {
       await this.rateLimiter.consume('default')
+
+      // Adds 500ms delay in between requests
+      await new Promise((resolve) => setTimeout(resolve, 500))
 
       const response = await axios.get(url)
       return response.data
     } catch (error) {
+      if (error.remainingPoints !== undefined) {
+        const waitTime = error.msBeforeNext || 60000
+        logger.warn(`Rate limit reached. Waiting ${waitTime / 1000} seconds before next request.`)
+
+        await new Promise((resolve) => setTimeout(resolve, waitTime))
+
+        if (retries > 0) {
+          logger.info(`Retrying request to ${url}.`)
+          return this.limitedFetch(url, retries - 1)
+        }
+      }
       logger.error(`Error fetching ${url}: ${error}`)
       throw Error
     }
@@ -177,14 +191,6 @@ export class DiscourseCrawler {
 
     if (!topic.posts_crawled) {
       try {
-        const result = await this.db.connection.runAndReadAll(`
-            SELECT c.*
-            FROM category c
-                     JOIN topic t ON c.id = t.category_id
-            WHERE t.id = ${topic.id}
-        `)
-
-        const category = result.getRows()[0] as Category
         const baseUrl = new URL(this.baseUrl)
         baseUrl.pathname = `/t/${topic.topic_id}.json`
         const url = baseUrl.toString()
@@ -229,7 +235,7 @@ export class DiscourseCrawler {
   }
 
   private async createPosts(topic: Topic, jsonPosts: any): Promise<number> {
-    const posts = jsonPosts.post_stream.posts_crawled
+    const posts = jsonPosts.post_stream.posts
 
     for (const post of posts) {
       const existingPost = await this.db.findPostByPostIdAndTopicId(post.id, topic.id!)
@@ -243,6 +249,7 @@ export class DiscourseCrawler {
       }
     }
 
+    logger.debug(`${posts.length} posts inserted`)
     return posts.length
   }
 
