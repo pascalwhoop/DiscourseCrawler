@@ -1,12 +1,13 @@
 import axios from 'axios'
 import { RateLimiterMemory } from 'rate-limiter-flexible'
-import { Database, Forum, Category, Page, Topic, Post } from './database.js'
+import { Database } from './database.js'
 import { logger } from './logger.js'
+import { Category, Forum, Topic } from './types/types.js'
+import { escapeJson } from './utils/helpers.js'
 
-function escapeJson(json: string): string {
-  return json.replace(/'/g, "''")
-}
-
+/**
+ * DiscourseCrawler class for crawling a Discourse forum instance
+ */
 export class DiscourseCrawler {
   private db: Database
   private baseUrl: string
@@ -18,6 +19,12 @@ export class DiscourseCrawler {
     this.rateLimiter = rateLimiter
   }
 
+  /**
+   * Creates a new DiscourseCrawler instance with database and rate limiter.
+   * @param {string} url - Base URL of the Discourse forum
+   * @param {string} dbPath - Path to the database file (defaults to 'discourse.db')
+   * @returns {Promise<DiscourseCrawler>} A configured DiscourseCrawler instance
+   */
   public static async create(
     url: string,
     dbPath: string = 'discourse.db',
@@ -32,6 +39,13 @@ export class DiscourseCrawler {
     return new DiscourseCrawler(url, db, rateLimiter)
   }
 
+  /**
+   * Performs a rate-limited HTTP request with retry logic.
+   * @param {string} url - URL to fetch
+   * @param {number} retries - Number of retries on failure (default: 3)
+   * @returns {Promise<any>} Response data
+   * @private
+   */
   private async limitedFetch(url: string, retries = 3): Promise<any> {
     try {
       await this.rateLimiter.consume('default')
@@ -58,11 +72,19 @@ export class DiscourseCrawler {
     }
   }
 
+  /**
+   * Main crawling method that orchestrates the entire crawling process.
+   */
   async crawl(): Promise<void> {
     const forum = await this.getForum()
     await this.crawlForum(forum)
   }
 
+  /**
+   * Gets or creates a forum record in the database.
+   * @returns {Promise<Forum>} The forum record
+   * @private
+   */
   private async getForum(): Promise<Forum> {
     let forum = await this.db.findForum(this.baseUrl)
 
@@ -75,6 +97,11 @@ export class DiscourseCrawler {
     return forum
   }
 
+  /**
+   * Crawls a forum to extract categories, topics, and posts.
+   * @param {Forum} forum - The forum to crawl
+   * @private
+   */
   private async crawlForum(forum: Forum): Promise<void> {
     logger.info(`Starting crawling forum: ${forum.url}`)
 
@@ -112,6 +139,11 @@ export class DiscourseCrawler {
     logger.info(`Completed crawling forum ${forum.id}`)
   }
 
+  /**
+   * Crawls a category to extract its pages and topics.
+   * @param {Category} category - The category to crawl
+   * @private
+   */
   private async crawlCategory(category: Category): Promise<void> {
     logger.info(`Crawling category ${category.category_id}`)
 
@@ -175,6 +207,11 @@ export class DiscourseCrawler {
     }
   }
 
+  /**
+   * Crawls all topics from all categories in a forum.
+   * @param {Forum} forum - The forum containing the topics
+   * @private
+   */
   private async crawlTopics(forum: Forum): Promise<void> {
     const categories = await this.db.findCategoriesByForumId(forum.id)
 
@@ -186,6 +223,11 @@ export class DiscourseCrawler {
     }
   }
 
+  /**
+   * Crawls a specific topic to extract its posts.
+   * @param {Topic} topic - The topic to crawl
+   * @private
+   */
   private async crawlTopic(topic: Topic): Promise<void> {
     logger.info(`Crawling topic ${topic.topic_id}`)
 
@@ -234,6 +276,13 @@ export class DiscourseCrawler {
     }
   }
 
+  /**
+   * Creates post records from JSON data.
+   * @param {Topic} topic - The topic containing the posts
+   * @param {any} jsonPosts - JSON data containing posts
+   * @returns {Promise<number>} Number of posts created
+   * @private
+   */
   private async createPosts(topic: Topic, jsonPosts: any): Promise<number> {
     const posts = jsonPosts.post_stream.posts
 
@@ -253,6 +302,9 @@ export class DiscourseCrawler {
     return posts.length
   }
 
+  /**
+   * Closes database connection
+   */
   async close(): Promise<void> {
     await this.db.close()
   }

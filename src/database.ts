@@ -1,68 +1,36 @@
-import { DuckDBInstance, DuckDBConnection } from '@duckdb/node-api'
+import { DuckDBConnection, DuckDBInstance } from '@duckdb/node-api'
+import { Category, Forum, Page, Post, Topic } from './types/types.js'
 
-export interface Forum {
-  id?: number
-  url: string
-  categories_crawled: boolean
-}
-
-export interface User {
-  id?: number
-  forum_id: number
-  json: string
-}
-
-export interface Category {
-  id?: number
-  category_id: number
-  forum_id: number
-  topic_url: string
-  json: string
-  pages_crawled: boolean
-}
-
-export interface Page {
-  id?: number
-  page_id: number
-  category_id: number
-  more_topics_url: string | null
-  json: string
-}
-
-export interface Topic {
-  id?: number
-  topic_id: number
-  category_id: number
-  page_excerpt_json: string
-  topic_json: string
-  posts_crawled: boolean
-}
-
-export interface Post {
-  id?: number
-  post_id: number
-  topic_id: number
-  json: string
-}
-
+/**
+ * Database class for managing Discourse forum data in DuckDB
+ * Handles database connections, schema creation, and CRUD for forum entities
+ */
 export class Database {
   private db: DuckDBInstance
   private connection: DuckDBConnection
-  private initialized: Boolean = false
+  private initialized: boolean = false
 
   private constructor() {}
 
+  /**
+   * Creates a new Database instance and initializes the connection
+   * @param {string} dbPath - Path to the DuckDB database file (defaults to 'discourse.db')
+   * @returns {Promise<Database>} A configured Database instance
+   */
   public static async create(dbPath: string = 'discourse.db'): Promise<Database> {
     const instance = new Database()
     await instance.init(dbPath)
     return instance
   }
 
+  /**
+   * Initializes the database connection and creates the schema if missing
+   * @param dbPath - Path to the DuckDB database file
+   */
   async init(dbPath: string = 'discourse.db') {
     const config = {
       path: dbPath,
     }
-    //
     this.db = await DuckDBInstance.create(config.path)
     this.connection = await this.db.connect()
 
@@ -252,12 +220,18 @@ export class Database {
     }
   }
 
+  /**
+   * Finds a forum by its URL
+   * @param {string} url - The forum URL to search for
+   * @returns {Promise<Forum | null>} The forum, if found, or null
+   */
   async findForum(url: string): Promise<Forum | null> {
     const reader = await this.connection.runAndReadAll(
       `
           SELECT *
           FROM forum
-          WHERE url = ? LIMIT 1
+          WHERE url = ?
+          LIMIT 1
       `,
       [url],
     )
@@ -268,11 +242,17 @@ export class Database {
     return rows.length > 0 ? (rows[0] as Forum) : null
   }
 
+  /**
+   *
+   * @param {Forum} forum - The Forum data to insert
+   * @returns {Promise<Forum>} The created Forum with ID
+   */
   async createForum(forum: Forum): Promise<Forum> {
     const reader = await this.connection.runAndReadAll(
       `
           INSERT INTO forum (url, categories_crawled)
-          VALUES (?, ?) RETURNING *
+          VALUES (?, ?)
+          RETURNING *
       `,
       [forum.url, forum.categories_crawled],
     )
@@ -281,6 +261,11 @@ export class Database {
     return rows[0] as Forum
   }
 
+  /**
+   * Creates a new Forum record in the database
+   * @param {number} id - The Forum ID to update
+   * @param {Partial<Forum>} data - The Forum data to update
+   */
   async updateForum(id: number, data: Partial<Forum>): Promise<void> {
     const setStatements: string[] = []
     const values: any[] = []
@@ -310,6 +295,11 @@ export class Database {
     )
   }
 
+  /**
+   * Finds all Categories belonging to a Forum
+   * @param {number} forumId - The Forum ID to search
+   * @return {Promise<Category[]>} - List of categories
+   */
   async findCategoriesByForumId(forumId: number): Promise<Category[]> {
     const reader = await this.connection.runAndReadAll(
       `
@@ -323,6 +313,12 @@ export class Database {
     return reader.getRowObjects() as Category[]
   }
 
+  /**
+   * Finds a single Category by its Category ID and Forum ID
+   * @param {number} categoryId - The Category ID to search
+   * @param {number} forumId - The Forum ID to search
+   * @returns {Promise<Category | null>} The Category, if found, or null
+   */
   async findCategoryByCategoryIdAndForumId(
     categoryId: number,
     forumId: number,
@@ -332,7 +328,8 @@ export class Database {
           SELECT *
           FROM category
           WHERE category_id = ?
-            AND forum_id = ? LIMIT 1
+            AND forum_id = ?
+          LIMIT 1
       `,
       [categoryId, forumId],
     )
@@ -341,6 +338,11 @@ export class Database {
     return rows.length > 0 ? (rows[0] as Category) : null
   }
 
+  /**
+   * Creates a new Category record or returns existing record
+   * @param {Category} category - The Category data to insert
+   * @returns {Promise<Category>} The created or existing Category
+   */
   async createCategory(category: Category): Promise<Category> {
     const existing = await this.findCategoryByCategoryIdAndForumId(
       category.category_id,
@@ -352,7 +354,8 @@ export class Database {
     const reader = await this.connection.runAndReadAll(
       `
           INSERT INTO category (category_id, forum_id, topic_url, json, pages_crawled)
-          VALUES (?, ?, ?, ?, ?) RETURNING *
+          VALUES (?, ?, ?, ?, ?)
+          RETURNING *
       `,
       [
         category.category_id,
@@ -402,6 +405,12 @@ export class Database {
     )
   }
 
+  /**
+   * Finds a topic by its Category ID and Topic ID
+   * @param {number}  categoryId - The Category ID to search
+   * @param {number} topicId - The Topic ID to search
+   * @returns {Promise<Topic | null>} The topic, if found, or null
+   */
   async findTopicByCategoryIdAndTopicId(
     categoryId: number,
     topicId: number,
@@ -411,7 +420,8 @@ export class Database {
           SELECT *
           FROM topic
           WHERE category_id = ?
-            AND topic_id = ? LIMIT 1
+            AND topic_id = ?
+          LIMIT 1
       `,
       [categoryId, topicId],
     )
@@ -434,6 +444,11 @@ export class Database {
     return reader.getRowObjects() as Topic[]
   }
 
+  /**
+   * Creates a new topic record or returns existing one if found.
+   * @param {Topic} topic - The topic data to insert
+   * @returns {Promise<Topic>} The created or existing topic
+   */
   async createTopic(topic: Topic): Promise<Topic> {
     const existing = await this.findTopicByCategoryIdAndTopicId(
       topic.category_id,
@@ -445,7 +460,8 @@ export class Database {
     const reader = await this.connection.runAndReadAll(
       `
           INSERT INTO topic (topic_id, category_id, page_excerpt_json, topic_json, posts_crawled)
-          VALUES (?, ?, ?, ?, ?) RETURNING *
+          VALUES (?, ?, ?, ?, ?)
+          RETURNING *
       `,
       [
         topic.topic_id,
@@ -461,6 +477,11 @@ export class Database {
     return rows[0] as Topic
   }
 
+  /**
+   * Updates an existing topic record.
+   * @param {number} id - The topic ID to update
+   * @param {Partial<Topic>} data - The topic data to update
+   */
   async updateTopic(id: number, data: Partial<Topic>): Promise<void> {
     const setStatements: string[] = []
     const values: any[] = []
@@ -487,21 +508,28 @@ export class Database {
 
     await this.connection.runAndReadAll(
       `
-        UPDATE topic
-        SET ${setStatements.join(', ')}
-        WHERE id = ?
-    `,
+          UPDATE topic
+          SET ${setStatements.join(', ')}
+          WHERE id = ?
+      `,
       [...values],
     )
   }
 
+  /**
+   * Finds a post by its post ID and topic ID.
+   * @param {number} postId - The post ID from Discourse
+   * @param {number} topicId - The topic ID
+   * @returns {Promise<Post | null>} The post if found, null otherwise
+   */
   async findPostByPostIdAndTopicId(postId: number, topicId: number): Promise<Post | null> {
     const reader = await this.connection.runAndReadAll(
       `
           SELECT *
           FROM post
           WHERE post_id = ?
-            AND topic_id = ? LIMIT 1
+            AND topic_id = ?
+          LIMIT 1
       `,
       [postId, topicId],
     )
@@ -510,6 +538,11 @@ export class Database {
     return rows.length > 0 ? (rows[0] as Post) : null
   }
 
+  /**
+   * Creates a new post record or returns existing one if found.
+   * @param {Post} post - The post data to insert
+   * @returns {Promise<Post>} The created or existing post
+   */
   async createPost(post: Post): Promise<Post> {
     const existing = await this.findPostByPostIdAndTopicId(post.post_id, post.topic_id)
 
@@ -518,7 +551,8 @@ export class Database {
     const reader = await this.connection.runAndReadAll(
       `
           INSERT INTO post (post_id, topic_id, json)
-          VALUES (?, ?, ?) RETURNING *
+          VALUES (?, ?, ?)
+          RETURNING *
       `,
       [post.post_id, post.topic_id, post.json],
     )
@@ -528,13 +562,20 @@ export class Database {
     return rows[0] as Post
   }
 
+  /**
+   * Finds a page by its category ID and page ID.
+   * @param {number} categoryId - The category ID
+   * @param {number} pageId - The page ID
+   * @returns {Promise<Page | null>} The page if found, null otherwise
+   */
   async findPageByCategoryIdAndPageId(categoryId: number, pageId: number): Promise<Page | null> {
     const reader = await this.connection.runAndReadAll(
       `
           SELECT *
           FROM page
           WHERE category_id = ?
-            AND page_id = ? LIMIT 1
+            AND page_id = ?
+          LIMIT 1
       `,
       [categoryId, pageId],
     )
@@ -544,6 +585,11 @@ export class Database {
     return rows.length > 0 ? (rows[0] as Page) : null
   }
 
+  /**
+   * Creates a new page record or returns existing one if found.
+   * @param {Page} page - The page data to insert
+   * @returns {Promise<Page>} The created or existing page
+   */
   async createPage(page: Page): Promise<Page> {
     const existing = await this.findPageByCategoryIdAndPageId(page.category_id, page.page_id)
 
@@ -552,7 +598,8 @@ export class Database {
     const reader = await this.connection.runAndReadAll(
       `
           INSERT INTO page (page_id, category_id, more_topics_url, json)
-          VALUES (?, ?, ?, ?) RETURNING *
+          VALUES (?, ?, ?, ?)
+          RETURNING *
       `,
       [page.page_id, page.category_id, page.more_topics_url, page.json],
     )
@@ -561,13 +608,19 @@ export class Database {
     return rows[0] as Page
   }
 
+  /**
+   * Gets the last page (highest page_id) for a category.
+   * @param {number} categoryId - The category ID
+   * @returns {Promise<Page | null>} The last page if found, null otherwise
+   */
   async getLastPageByCategory(categoryId: number): Promise<Page | null> {
     const reader = await this.connection.runAndReadAll(
       `
           SELECT *
           FROM page
           WHERE category_id = ?
-          ORDER BY page_id desc LIMIT 1
+          ORDER BY page_id desc
+          LIMIT 1
       `,
       [categoryId],
     )
@@ -576,6 +629,10 @@ export class Database {
     return rows.length > 0 ? (rows[0] as Page) : null
   }
 
+  /**
+   * Inserts multiple posts in a single transaction.
+   * @param {Post[]} posts - Array of posts to insert
+   */
   async bulkInsertPosts(posts: Post[]): Promise<void> {
     if (posts.length === 0) return
 
@@ -591,11 +648,21 @@ export class Database {
     appender.close()
   }
 
+  /**
+   * Executes a custom SQL query with parameters.
+   * @param {string} sql - SQL query to execute
+   * @param {any[]} params - Query parameters
+   * @returns {Promise<T[]>} Query results
+   * @template T - Type of the returned data
+   */
   async query<T>(sql: string, params: any[] = []): Promise<T[]> {
     const reader = await this.connection.runAndReadAll(sql, params)
     return reader.getRowObjects() as T[]
   }
 
+  /**
+   * Closes the database connection.
+   */
   async close(): Promise<void> {
     if (this.connection) await this.connection.close()
   }

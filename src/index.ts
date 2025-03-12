@@ -40,11 +40,6 @@ async function main() {
   }
 }
 
-// main().catch((error) => {
-//   console.error('Unhandled error:', error)
-//   process.exit(1)
-// })
-
 // Add error handling for unhandled rejections
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason)

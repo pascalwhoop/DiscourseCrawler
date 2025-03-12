@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { DiscourseCrawler } from '../crawling'
-import { Database, Forum, Category, Topic } from '../database'
+import { Database } from '../database'
 import axios from 'axios'
 import { RateLimiterMemory } from 'rate-limiter-flexible'
 import exp = require('node:constants')
+import { Category, Forum, Topic } from '../types/types'
 
 vi.mock('axios')
 vi.mock('../database')
@@ -63,12 +64,12 @@ describe('DiscourseCrawler', () => {
       const mockForum = {
         id: 1,
         url: 'https://test.com',
-        categories_crawled: true
+        categories_crawled: true,
       }
 
       const mockDb = {
         findForum: vi.fn().mockResolvedValue(mockForum),
-        close: vi.fn()
+        close: vi.fn(),
       }
 
       vi.mocked(Database.create).mockResolvedValue(mockDb as any)
@@ -84,13 +85,13 @@ describe('DiscourseCrawler', () => {
       const mockForum = {
         id: 1,
         url: 'https://test.com',
-        categories_crawled: false
+        categories_crawled: false,
       }
 
       const mockDb = {
         findForum: vi.fn().mockResolvedValue(null),
         createForum: vi.fn().mockResolvedValue(mockForum),
-        close: vi.fn()
+        close: vi.fn(),
       }
 
       vi.mocked(Database.create).mockResolvedValue(mockDb as any)
@@ -112,10 +113,10 @@ describe('DiscourseCrawler', () => {
       const mockForum = {
         id: 1,
         url: 'https://test.com',
-        categories_crawled: true
+        categories_crawled: true,
       }
       const mockDb = {
-        close: vi.fn()
+        close: vi.fn(),
       }
       vi.mocked(Database.create).mockResolvedValue(mockDb as any)
 
