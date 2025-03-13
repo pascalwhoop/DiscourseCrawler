@@ -37,7 +37,7 @@ cd DiscourseCrawler
 # Install dependencies
 pnpm install
 
-# Run project in development 
+# Run project in development
 pnpm run dev -u https://community.retool.com --rate-limit 250 --verbose
 
 # Build the project
@@ -62,7 +62,7 @@ discourse-crawler --url https://forum.example.com --db-path ./my-forum.db --full
 ### Command Line Options
 
 | Option         | Alias | Description                                             | Default          |
-|----------------|-------|---------------------------------------------------------|------------------|
+| -------------- | ----- | ------------------------------------------------------- | ---------------- |
 | `--url`        | `-u`  | URL of the Discourse forum to crawl (required)          | -                |
 | `--db-path`    | `-d`  | Path to save the DuckDB database                        | `./discourse.db` |
 | `--full`       | `-f`  | Perform a full crawl (ignore previous crawled state)    | `false`          |
@@ -73,29 +73,24 @@ discourse-crawler --url https://forum.example.com --db-path ./my-forum.db --full
 ### Programmatic Usage
 
 ```typescript
-import { DiscourseCrawler } from 'discourse_crawler';
+import { DiscourseCrawler } from 'discourse_crawler'
 
 async function main() {
   // Create a new crawler instance
-  const crawler = await DiscourseCrawler.create(
-    'https://forum.example.com',
-    './my-forum.db',
-    {
-      fullCrawl: false,
-      sinceDate: new Date('2023-01-01'),
-      rateLimit: 500
-    }
-  );
+  const crawler = await DiscourseCrawler.create('https://forum.example.com', './my-forum.db', {
+    fullCrawl: false,
+    sinceDate: new Date('2023-01-01'),
+    rateLimit: 500,
+  })
 
   try {
     // Start crawling
-    await crawler.crawl();
+    await crawler.crawl()
   } finally {
     // Always close the connection when done
-    await crawler.close();
+    await crawler.close()
   }
 }
 
-main().catch(console.error);
+main().catch(console.error)
 ```
-
