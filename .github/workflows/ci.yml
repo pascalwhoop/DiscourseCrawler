@@ -49,3 +49,8 @@ jobs:
         with:
           name: dist
           path: dist/
+
+      - name: Publish
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
