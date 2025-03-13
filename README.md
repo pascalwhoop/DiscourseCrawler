@@ -4,7 +4,7 @@ A crawler and scraper for Discourse-based forums, inspired
 by IIIA-CSIC's Python [Discourse Crawler](https://github.com/IIIA-ML/DiscourseCrawler). The aim is to quickly and
 efficiently dump a forum's data into a DuckDB database for further use.
 
-[![npm version](https://img.shields.io/npm/v/discourse_crawler.svg)](https://www.npmjs.com/package/discourse_crawler)
+[![npm version](https://img.shields.io/npm/v/discourse-crawler.svg)](https://www.npmjs.com/package/discourse_crawler)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Features
