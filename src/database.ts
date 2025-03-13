@@ -18,7 +18,7 @@ export class Database {
    * @param {string} dbPath - Path to the DuckDB database file (defaults to 'discourse.db')
    * @returns {Promise<Database>} A configured Database instance
    */
-  public static async create(dbPath: string = 'discourse.db'): Promise<Database> {
+  public static async create(dbPath: string = './discourse.db'): Promise<Database> {
     const instance = new Database()
     await instance.init(dbPath)
     return instance
@@ -28,7 +28,7 @@ export class Database {
    * Initializes the database connection and creates the schema if missing
    * @param dbPath - Path to the DuckDB database file
    */
-  async init(dbPath: string = 'discourse.db') {
+  async init(dbPath: string = './discourse.db') {
     const config = {
       path: dbPath,
     }
@@ -49,7 +49,7 @@ export class Database {
         
         CREATE SEQUENCE IF NOT EXISTS user_seq;
         
-        CREATE TABLE IF NOT EXISTS USER(
+        CREATE TABLE IF NOT EXISTS user (
           id INTEGER PRIMARY KEY DEFAULT nextval('user_seq'),
           forum_id INTEGER,
           json TEXT,

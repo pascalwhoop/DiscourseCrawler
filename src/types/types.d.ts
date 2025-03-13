@@ -46,6 +46,7 @@ export interface Post {
 export interface CrawlerOptions {
   fullCrawl?: boolean
   sinceDate?: Date | null
+  rateLimit?: number
 }
 
 export interface CommandLineOptions {
@@ -53,4 +54,6 @@ export interface CommandLineOptions {
   dbPath: string
   full?: boolean
   since?: string
+  rateLimit?: number
+  verbose?: boolean
 }

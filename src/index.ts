@@ -1,13 +1,14 @@
 import { DiscourseCrawler } from './crawling'
 import commandLineArgs from 'command-line-args'
 import { logger, LogLevel } from './logger.js'
-import { CommandLineOptions } from './types/types.js'
+import { CommandLineOptions, CrawlerOptions } from './types/types.js'
 
 const optionDefinitions = [
   { name: 'url', alias: 'u', type: String },
   { name: 'dbPath', alias: 'd', type: String },
   { name: 'full', alias: 'f', type: Boolean },
   { name: 'since', alias: 's', type: String },
+  { name: 'rate-limit', alias: 'r', type: Number },
   { name: 'verbose', alias: 'v', type: Boolean },
 ]
 
@@ -15,24 +16,31 @@ async function main() {
   logger.setLevel(LogLevel.DEBUG)
 
   try {
-    const options = commandLineArgs(optionDefinitions) as CommandLineOptions
+    const options = commandLineArgs(optionDefinitions, { camelCase: true }) as CommandLineOptions
 
     if (!options.url) {
       console.log(
-        `Usage: npm start -- --url=<discourse-url> [--dbPath=<db-path>] [--full] [--since=YYYY-MM-DD] [--verbose]`,
+        `Usage: npm start -- --url=<discourse-url> [--dbPath=<db-path>] [--full] [--since=YYYY-MM-DD] [--rate-limit 500] [--verbose]`,
       )
       process.exit(1)
     }
 
     logger.setLevel(options.verbose ? LogLevel.DEBUG : LogLevel.INFO)
 
+    if (options?.verbose) logger.debug('Verbose logging enabled.')
+
     const url = options.url
-    const dbPath = options.dbPath || 'discourse.db'
+    const dbPath = options.dbPath || './discourse.db'
     const fullCrawl = options.full || false
     const sinceDate = options.since ? new Date(options.since) : null
+    const rateLimit = options.rateLimit || 500
 
     if (sinceDate) {
       logger.info(`Crawling content since ${sinceDate.toISOString().split('T')[0]}`)
+    }
+
+    if (rateLimit) {
+      logger.info(`Rate limit provided and set to ${rateLimit} ms`)
     }
 
     if (fullCrawl) {
@@ -41,7 +49,11 @@ async function main() {
       logger.info('Performing incremental crawl from timestamp last crawled')
     }
 
-    const crawler = await DiscourseCrawler.create(url, dbPath, { fullCrawl, sinceDate })
+    const crawler = await DiscourseCrawler.create(url, dbPath, {
+      fullCrawl,
+      sinceDate,
+      rateLimit,
+    } as CrawlerOptions)
 
     try {
       await crawler.crawl()

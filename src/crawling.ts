@@ -29,18 +29,18 @@ export class DiscourseCrawler {
   /**
    * Creates a new DiscourseCrawler instance with database and rate limiter.
    * @param {string} url - Base URL of the Discourse forum
-   * @param {string} dbPath - Path to the database file (defaults to 'discourse.db')
+   * @param {string} dbPath - Path to the database file (defaults to './discourse.db')
    * @param {CrawlerOptions} options - Additional options to control crawler behavior
    * @returns {Promise<DiscourseCrawler>} A configured DiscourseCrawler instance
    */
   public static async create(
     url: string,
-    dbPath: string = 'discourse.db',
+    dbPath: string = './discourse.db',
     options: CrawlerOptions = {},
   ): Promise<DiscourseCrawler> {
     const db = await Database.create(dbPath)
     const rateLimiter = new RateLimiterMemory({
-      points: 3,
+      points: this.options?.rateLimit ? Math.round(1000 / this.options?.rateLimit) : 3,
       duration: 1,
       blockDuration: 60,
     })
@@ -59,8 +59,9 @@ export class DiscourseCrawler {
     try {
       await this.rateLimiter.consume('default')
 
-      // Adds 500ms delay in between requests
-      await new Promise((resolve) => setTimeout(resolve, 500))
+      // Adds rate limit delay if provided or defaults to 500ms
+      const rateLimit = this.options?.rateLimit || 500
+      await new Promise((resolve) => setTimeout(resolve, rateLimit))
 
       const response = await axios.get(url)
       return response.data
@@ -87,11 +88,17 @@ export class DiscourseCrawler {
   async crawl(): Promise<void> {
     const forum = await this.getForum()
 
+    // If fullCrawl is set, reset crawled state for all Forum objects
     if (this.options?.fullCrawl) await this.resetCrawledState(forum)
 
     await this.crawlForum(forum)
   }
 
+  /**
+   * Resets crawled state for all Forum objects
+   * @param {Forum} forum - Forum data to reset
+   * @private
+   */
   private async resetCrawledState(forum: Forum): Promise<void> {
     logger.info(`Resetting crawled state for forum ${forum.id}`)
 
@@ -103,6 +110,9 @@ export class DiscourseCrawler {
       await this.db.updateCategory(category.id!, { pages_crawled: false })
     }
 
+    // Simpler to run directly here absent adding new method
+    // Resets posts_crawled and last_crawled_at for topics
+    // for all categories at once
     await this.db.query(
       `
           UPDATE topic t
@@ -143,6 +153,7 @@ export class DiscourseCrawler {
   private async crawlForum(forum: Forum): Promise<void> {
     logger.info(`Starting crawling forum: ${forum.url}`)
 
+    // If we've never crawled before, get category data and create categories
     if (!forum.categories_crawled) {
       const categoriesUrl = new URL(forum.url + '/categories.json')
       const categoryData = await this.limitedFetch(categoriesUrl.toString())
@@ -166,12 +177,14 @@ export class DiscourseCrawler {
       logger.info(`Skipping obtaining categories`)
     }
 
+    // Retrieve all created categories and crawl them
     const categories = await this.db.findCategoriesByForumId(forum.id)
 
     for (const category of categories) {
       await this.crawlCategory(category)
     }
 
+    // Then crawl all topics
     await this.crawlTopics(forum)
 
     logger.info(`Completed crawling forum ${forum.id}`)
@@ -185,13 +198,16 @@ export class DiscourseCrawler {
   private async crawlCategory(category: Category): Promise<void> {
     logger.info(`Crawling category ${category.category_id}`)
 
+    // Either the latest last_crawled_at timestamp or sinceDate, if passed
     const sinceDate =
       this.options?.sinceDate ||
       (!this.options?.fullCrawl && (await this.db.getLatestTopicTimestamp(category.forum_id)))
 
+    // Run full crawl if first time or if fullCrawl is set
     if (!category.pages_crawled || this.options?.fullCrawl) {
       let lastPage = await this.db.getLastPageByCategory(category.id!)
 
+      // Paginates through a Category's pages
       while (lastPage === null || lastPage.more_topics_url !== null) {
         let url: string
         let nextPageId: number
