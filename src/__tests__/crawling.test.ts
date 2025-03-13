@@ -1,10 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { DiscourseCrawler } from '../crawling'
-import { Database } from '../database'
 import axios from 'axios'
 import { RateLimiterMemory } from 'rate-limiter-flexible'
-import exp = require('node:constants')
-import { Category, Forum, Topic } from '../types/types'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+
+import { DiscourseCrawler } from '../crawling.js'
+import { Database } from '../database.js'
 
 vi.mock('axios')
 vi.mock('../database')

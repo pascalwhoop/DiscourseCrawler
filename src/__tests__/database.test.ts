@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { Database } from '../database'
-import { DuckDBInstance, DuckDBConnection } from '@duckdb/node-api'
-import { Category, Forum, Page, Post, Topic } from '../types/types'
+
+import { Database } from '../database.js'
+import { Forum } from '../types/types.js'
 
 vi.mock('@duckdb/node-api', () => {
   const mockConnection = {
