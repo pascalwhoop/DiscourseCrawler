@@ -1,5 +1,6 @@
 import { DuckDBConnection, DuckDBInstance } from '@duckdb/node-api'
 import { Category, Forum, Page, Post, Topic } from './types/types.js'
+import { withoutProjectParserOptions } from '@typescript-eslint/parser'
 
 /**
  * Database class for managing Discourse forum data in DuckDB
@@ -38,182 +39,72 @@ export class Database {
       // Create tables if they don't exist
       await this.connection.run(`
 
-          CREATE SEQUENCE IF NOT EXISTS forum_seq;
+        CREATE SEQUENCE IF NOT EXISTS forum_seq;
+
+        CREATE TABLE IF NOT EXISTS forum (
+          id INTEGER PRIMARY KEY DEFAULT nextval('forum_seq'),
+          url VARCHAR,
+          categories_crawled BOOLEAN DEFAULT FALSE
+        );
         
-          CREATE TABLE IF NOT EXISTS forum
-          (
-              id
-              INTEGER
-              PRIMARY
-              KEY
-              DEFAULT
-              nextval('forum_seq'),
-              url
-              VARCHAR,
-              categories_crawled
-              BOOLEAN
-              DEFAULT
-              FALSE
-          );
-          
-          CREATE SEQUENCE IF NOT EXISTS user_seq;
-
-          CREATE TABLE IF NOT EXISTS user
-          (
-              id
-              INTEGER
-              PRIMARY
-              KEY
-              DEFAULT
-              nextval('user_seq'),
-              forum_id
-              INTEGER,
-              json
-              TEXT,
-              FOREIGN
-              KEY
-          (
-              forum_id
-          ) REFERENCES forum
-          (
-              id
-          )
-              );
-
-          CREATE SEQUENCE IF NOT EXISTS category_seq;
-
-          CREATE TABLE IF NOT EXISTS category
-          (
-              id
-              INTEGER
-              PRIMARY
-              KEY
-              DEFAULT
-              nextval('category_seq'),
-              category_id
-              INTEGER,
-              forum_id
-              INTEGER,
-              topic_url
-              VARCHAR,
-              json
-              TEXT,
-              pages_crawled
-              BOOLEAN
-              DEFAULT
-              FALSE,
-              UNIQUE
-          (
-              category_id,
-              forum_id
-          ),
-              FOREIGN KEY
-          (
-              forum_id
-          ) REFERENCES forum
-          (
-              id
-          )
-              );
-
-          CREATE SEQUENCE IF NOT EXISTS page_seq;
-
-
-          CREATE TABLE IF NOT EXISTS page
-          (
-              id
-              INTEGER
-              PRIMARY
-              KEY
-              DEFAULT
-              nextval('page_seq'),
-              page_id
-              INTEGER,
-              category_id
-              INTEGER,
-              more_topics_url
-              VARCHAR,
-              json
-              TEXT,
-              UNIQUE
-          (
-              category_id,
-              page_id
-          ),
-              FOREIGN KEY
-          (
-              category_id
-          ) REFERENCES category
-          (
-              id
-          )
-              );
-
-          CREATE SEQUENCE IF NOT EXISTS topic_seq;
-
-          CREATE TABLE IF NOT EXISTS topic
-          (
-              id
-              INTEGER
-              PRIMARY
-              KEY
-              DEFAULT
-              nextval('topic_seq'),
-              topic_id
-              INTEGER,
-              category_id
-              INTEGER,
-              page_excerpt_json
-              TEXT,
-              topic_json
-              TEXT,
-              posts_crawled
-              BOOLEAN
-              DEFAULT
-              FALSE,
-              UNIQUE
-          (
-              category_id,
-              topic_id
-          ),
-              FOREIGN KEY
-          (
-              category_id
-          ) REFERENCES category
-          (
-              id
-          )
-              );
-
-          CREATE SEQUENCE IF NOT EXISTS post_seq;
-
-          CREATE TABLE IF NOT EXISTS post
-          (
-              id
-              INTEGER
-              PRIMARY
-              KEY
-              DEFAULT
-              nextval('post_seq'),
-              post_id
-              INTEGER,
-              topic_id
-              INTEGER,
-              json
-              TEXT,
-              UNIQUE
-          (
-              topic_id,
-              post_id
-          ),
-              FOREIGN KEY
-          (
-              topic_id
-          ) REFERENCES topic
-          (
-              id
-          )
-              );
+        CREATE SEQUENCE IF NOT EXISTS user_seq;
+        
+        CREATE TABLE IF NOT EXISTS USER(
+          id INTEGER PRIMARY KEY DEFAULT nextval('user_seq'),
+          forum_id INTEGER,
+          json TEXT,
+          FOREIGN KEY (forum_id) REFERENCES forum (id)
+        );
+        
+        CREATE SEQUENCE IF NOT EXISTS category_seq;
+        
+        CREATE TABLE IF NOT EXISTS category (
+          id INTEGER PRIMARY KEY DEFAULT nextval('category_seq'),
+          category_id INTEGER,
+          forum_id INTEGER,
+          topic_url VARCHAR,
+          json TEXT,
+          pages_crawled BOOLEAN DEFAULT FALSE,
+          UNIQUE (category_id, forum_id),
+          FOREIGN KEY (forum_id) REFERENCES forum (id)
+        );
+        
+        CREATE SEQUENCE IF NOT EXISTS page_seq;
+        
+        CREATE TABLE IF NOT EXISTS page (
+          id INTEGER PRIMARY KEY DEFAULT nextval('page_seq'),
+          page_id INTEGER,
+          category_id INTEGER,
+          more_topics_url VARCHAR,
+          json TEXT,
+          UNIQUE (category_id, page_id),
+          FOREIGN KEY (category_id) REFERENCES category (id)
+        );
+        
+        CREATE SEQUENCE IF NOT EXISTS topic_seq;
+        
+        CREATE TABLE IF NOT EXISTS topic (
+          id INTEGER PRIMARY KEY DEFAULT nextval('topic_seq'),
+          topic_id INTEGER,
+          category_id INTEGER,
+          page_excerpt_json TEXT,
+          topic_json TEXT,
+          posts_crawled BOOLEAN DEFAULT FALSE,
+          last_crawled_at TIMESTAMP,
+          UNIQUE (category_id, topic_id),
+          FOREIGN KEY (category_id) REFERENCES category (id)
+        );
+        
+        CREATE SEQUENCE IF NOT EXISTS post_seq;
+        
+        CREATE TABLE IF NOT EXISTS post (
+          id INTEGER PRIMARY KEY DEFAULT nextval('post_seq'),
+          post_id INTEGER,
+          topic_id INTEGER,
+          json TEXT,
+          UNIQUE (topic_id, post_id),
+          FOREIGN KEY (topic_id) REFERENCES topic (id)
+        );
       `)
 
       this.initialized = true
@@ -517,6 +408,55 @@ export class Database {
   }
 
   /**
+   * Updates last_crawled_at for a specific topic
+   * @param {number} id
+   */
+  async updateTopicLastCrawled(id: number): Promise<void> {
+    await this.connection.run(
+      `
+          UPDATE topic
+          SET last_crawled_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+      `,
+      [id],
+    )
+  }
+
+  async getTopicLastPostNumber(topicId: number): Promise<number | null> {
+    const reader = await this.connection.runAndReadAll(
+      `
+          SELECT MAX(CAST(JSON_EXTRACT(json, '$.post_number') AS INTEGER)) as max_post_number
+          FROM post
+          WHERE topic_id = ?
+      `,
+      [topicId],
+    )
+
+    const rows = reader.getRowObjects()
+    return rows[0]?.max_post_number || null
+  }
+
+  /**
+   * Retrieves the most recent (latest) timestamp for crawled topics
+   * @param {number} forumId
+   * @returns {Promise<Date | null>}
+   */
+  async getLatestTopicTimestamp(forumId: number): Promise<Date | null> {
+    const reader = await this.connection.runAndReadAll(
+      `
+          SELECT MAX(CAST(JSON_EXTRACT(topic_json, '$.created_at') AS TIMESTAMP)) as latest_timestamp
+          FROM topic t
+                   JOIN category c ON t.category_id = c.id
+          WHERE c.forum_id = ?
+      `,
+      [forumId],
+    )
+
+    const rows = reader.getRowObjects()
+    return rows[0]?.latest_timestamp ? new Date(rows[0].latest_timestamp) : null
+  }
+
+  /**
    * Finds a post by its post ID and topic ID.
    * @param {number} postId - The post ID from Discourse
    * @param {number} topicId - The topic ID
@@ -560,6 +500,53 @@ export class Database {
     const rows = reader.getRowObjects()
 
     return rows[0] as Post
+  }
+
+  /**
+   * Updates a Post if it has been edited
+   * @param {number} id - The Post ID to update
+   * @param {string} json - The new Post's JSON data
+   * @returns {Promise<boolean>} True if updated, false if no change
+   */
+  async updatePostIfEdited(id: number, json: string): Promise<boolean> {
+    const parsedJSON = JSON.parse(json)
+    const versionNumber = parsedJSON.version || 1
+    const editedAt = parsedJSON.updated_at || parsedJSON.created_at
+
+    const reader = await this.connection.runAndReadAll(
+      `
+          SELECT id,
+                 CAST(JSON_EXTRACT(json, '$.version') AS INTEGER) as version,
+                 JSON_EXTRACT(json, '$.updated_at')               as updated_at
+          FROM post
+          WHERE id = ?
+      `,
+      [id],
+    )
+
+    const rows = reader.getRowObjects()
+
+    if (rows.length === 0) return false
+
+    const currentVersion = rows[0].version || 1
+    const currentUpdatedAt = rows[0].updated_at
+
+    if (
+      versionNumber > currentVersion ||
+      (editedAt && (currentUpdatedAt || new Date(editedAt) > new Date(currentUpdatedAt)))
+    ) {
+      await this.connection.run(
+        `
+            UPDATE post
+            SET json = ?
+            WHERE id = ?
+        `,
+        [json, id],
+      )
+      return true
+    }
+
+    return false
   }
 
   /**

@@ -2,7 +2,7 @@ import axios from 'axios'
 import { RateLimiterMemory } from 'rate-limiter-flexible'
 import { Database } from './database.js'
 import { logger } from './logger.js'
-import { Category, Forum, Topic } from './types/types.js'
+import { Category, CrawlerOptions, Forum, Topic } from './types/types.js'
 import { escapeJson } from './utils/helpers.js'
 
 /**
@@ -12,22 +12,31 @@ export class DiscourseCrawler {
   private db: Database
   private baseUrl: string
   private rateLimiter: RateLimiterMemory
+  private options: CrawlerOptions
 
-  private constructor(baseUrl: string, db: Database, rateLimiter: RateLimiterMemory) {
+  private constructor(
+    baseUrl: string,
+    db: Database,
+    rateLimiter: RateLimiterMemory,
+    options: CrawlerOptions = {},
+  ) {
     this.baseUrl = baseUrl
     this.db = db
     this.rateLimiter = rateLimiter
+    this.options = options
   }
 
   /**
    * Creates a new DiscourseCrawler instance with database and rate limiter.
    * @param {string} url - Base URL of the Discourse forum
    * @param {string} dbPath - Path to the database file (defaults to 'discourse.db')
+   * @param {CrawlerOptions} options - Additional options to control crawler behavior
    * @returns {Promise<DiscourseCrawler>} A configured DiscourseCrawler instance
    */
   public static async create(
     url: string,
     dbPath: string = 'discourse.db',
+    options: CrawlerOptions = {},
   ): Promise<DiscourseCrawler> {
     const db = await Database.create(dbPath)
     const rateLimiter = new RateLimiterMemory({
@@ -36,7 +45,7 @@ export class DiscourseCrawler {
       blockDuration: 60,
     })
 
-    return new DiscourseCrawler(url, db, rateLimiter)
+    return new DiscourseCrawler(url, db, rateLimiter, options)
   }
 
   /**
@@ -77,7 +86,36 @@ export class DiscourseCrawler {
    */
   async crawl(): Promise<void> {
     const forum = await this.getForum()
+
+    if (this.options?.fullCrawl) await this.resetCrawledState(forum)
+
     await this.crawlForum(forum)
+  }
+
+  private async resetCrawledState(forum: Forum): Promise<void> {
+    logger.info(`Resetting crawled state for forum ${forum.id}`)
+
+    await this.db.updateForum(forum.id, { categories_crawled: false })
+
+    const categories = await this.db.findCategoriesByForumId(forum.id)
+
+    for (const category of categories) {
+      await this.db.updateCategory(category.id!, { pages_crawled: false })
+    }
+
+    await this.db.query(
+      `
+          UPDATE topic t
+          SET posts_crawled   = FALSE,
+              last_crawled_at = NULL
+          FROM category c
+          WHERE t.category_id = c.id
+            AND c.forum_id = ?
+      `,
+      [forum.id],
+    )
+
+    logger.info('Crawled state reset.')
   }
 
   /**
@@ -147,7 +185,11 @@ export class DiscourseCrawler {
   private async crawlCategory(category: Category): Promise<void> {
     logger.info(`Crawling category ${category.category_id}`)
 
-    if (!category.pages_crawled) {
+    const sinceDate =
+      this.options?.sinceDate ||
+      (!this.options?.fullCrawl && (await this.db.getLatestTopicTimestamp(category.forum_id)))
+
+    if (!category.pages_crawled || this.options?.fullCrawl) {
       let lastPage = await this.db.getLastPageByCategory(category.id!)
 
       while (lastPage === null || lastPage.more_topics_url !== null) {
@@ -157,12 +199,25 @@ export class DiscourseCrawler {
         if (lastPage === null) {
           const urlObj = new URL(`/c/${category.category_id}.json`, this.baseUrl)
           urlObj.searchParams.set('page', '0')
+
+          // If there's existing topic data, we crawl topics created after
+          // the latest timestamp in the topics table
+          if (sinceDate) {
+            const formattedDate = sinceDate.toISOString().split('T')[0]
+            urlObj.searchParams.set('after', formattedDate)
+          }
+
           url = urlObj.toString()
           nextPageId = 0
         } else {
           nextPageId = lastPage.page_id + 1
           const moreUrl = lastPage.more_topics_url!.replace('?', '.json?')
           const urlObj = new URL(moreUrl, this.baseUrl)
+
+          if (sinceDate && !urlObj.searchParams.has('after')) {
+            const formattedDate = sinceDate.toISOString().split('T')[0]
+            urlObj.searchParams.set('after', formattedDate)
+          }
           url = urlObj.toString()
         }
 
@@ -198,6 +253,10 @@ export class DiscourseCrawler {
         }
         logger.info(`Page ${nextPageId} and its topics committed to db`)
         lastPage = page
+
+        if (!moreTopicsUrl) {
+          break
+        }
       }
 
       await this.db.updateCategory(category.id!, { pages_crawled: true })
@@ -218,9 +277,44 @@ export class DiscourseCrawler {
     for (const category of categories) {
       const topics = await this.db.getTopicsByCategoryId(category.id)
       for (const topic of topics) {
+        // Skip topics that have been crawled unless we're doing a full crawl
+        // or if the topic was crawled before our sinceDate
+        if (topic.posts_crawled && !this.options?.fullCrawl) {
+          if (this.options?.sinceDate && topic.last_crawled_at) {
+            const lastCrawled = new Date(topic.last_crawled_at)
+            if (lastCrawled >= this.options.sinceDate) {
+              logger.info(
+                `Skipping topic ${topic.topic_id} - already crawled after ${this.options.sinceDate}`,
+              )
+              continue
+            }
+          } else {
+            logger.info(`Skipping topic ${topic.topic_id} - already crawled`)
+            continue
+          }
+        }
+
         await this.crawlTopic(topic)
       }
     }
+
+    // for (const category of categories) {
+    //   const topics = await this.db.getTopicsByCategoryId(category.id)
+    //   for (const topic of topics) {
+    //     if (topic.posts_crawled && !this.options?.fullCrawl) {
+    //       if (this.options?.sinceDate && topic.last_crawled_at) {
+    //         const lastCrawled = new Date(topic.last_crawled_at)
+    //         if (lastCrawled >= this.options.sinceDate) {
+    //           logger.info(
+    //             `Skipping topic ${topic.topic_id}. Already crawled since ${this.options.sinceDate}`,
+    //           )
+    //           continue
+    //         }
+    //       }
+    //     }
+    //     await this.crawlTopic(topic)
+    //   }
+    // }
   }
 
   /**
@@ -235,8 +329,17 @@ export class DiscourseCrawler {
       try {
         const baseUrl = new URL(this.baseUrl)
         baseUrl.pathname = `/t/${topic.topic_id}.json`
-        const url = baseUrl.toString()
 
+        let lastPostNumber = null
+        if (topic.posts_crawled && !this.options?.fullCrawl) {
+          lastPostNumber = await this.db.getTopicLastPostNumber(topic.id)
+          if (lastPostNumber) {
+            baseUrl.searchParams.set('posts_after', lastPostNumber.toString())
+            logger.info(`Getting posts after post number ${lastPostNumber}`)
+          }
+        }
+
+        const url = baseUrl.toString()
         const jsonTopic = await this.limitedFetch(url)
 
         await this.db.updateTopic(topic.id!, {
@@ -265,7 +368,10 @@ export class DiscourseCrawler {
           remainingPosts = remainingPosts.slice(nPosts)
         }
 
-        await this.db.updateTopic(topic.id!, { posts_crawled: true })
+        await this.db.updateTopicLastCrawled(topic.id!)
+
+        // Mark as crawled if this is the first time
+        if (!topic.posts_crawled) await this.db.updateTopic(topic.id!, { posts_crawled: true })
       } catch (error) {
         logger.error(`Exception in topic ${topic.topic_id}: ${error}`)
       }
@@ -285,20 +391,33 @@ export class DiscourseCrawler {
    */
   private async createPosts(topic: Topic, jsonPosts: any): Promise<number> {
     const posts = jsonPosts.post_stream.posts
+    let updatedCount = 0
 
     for (const post of posts) {
       const existingPost = await this.db.findPostByPostIdAndTopicId(post.id, topic.id!)
+      const jsonPost = escapeJson(JSON.stringify(post))
 
       if (!existingPost) {
         await this.db.createPost({
           post_id: post.id,
           topic_id: topic.id,
-          json: escapeJson(JSON.stringify(post)),
+          json: jsonPost,
         })
+        updatedCount++
+      } else if (!this.options?.fullCrawl) {
+        try {
+          const wasUpdated = await this.db.updatePostIfEdited(existingPost.id, jsonPost)
+          if (wasUpdated) {
+            logger.info(`New version of post ${post.id} found in topic ${topic.id}`)
+            updatedCount++
+          }
+        } catch (error) {
+          logger.error(`Error updating post ${post.id}: ${error}`)
+        }
       }
     }
 
-    logger.debug(`${posts.length} posts inserted`)
+    logger.debug(`${updatedCount} posts inserted or updated out of ${posts.length} posts inserted`)
     return posts.length
   }
 

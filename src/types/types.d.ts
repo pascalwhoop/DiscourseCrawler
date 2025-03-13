@@ -42,3 +42,15 @@ export interface Post {
   topic_id: number
   json: string
 }
+
+export interface CrawlerOptions {
+  fullCrawl?: boolean
+  sinceDate?: Date | null
+}
+
+export interface CommandLineOptions {
+  url: string
+  dbPath: string
+  full?: boolean
+  since?: string
+}
