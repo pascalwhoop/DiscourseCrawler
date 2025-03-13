@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { RateLimiterMemory } from 'rate-limiter-flexible'
+
 import { Database } from './database.js'
 import { logger } from './logger.js'
 import { Category, CrawlerOptions, Forum, Topic } from './types/types.js'
@@ -102,9 +103,9 @@ export class DiscourseCrawler {
   private async resetCrawledState(forum: Forum): Promise<void> {
     logger.info(`Resetting crawled state for forum ${forum.id}`)
 
-    await this.db.updateForum(forum.id, { categories_crawled: false })
+    await this.db.updateForum(forum.id!, { categories_crawled: false })
 
-    const categories = await this.db.findCategoriesByForumId(forum.id)
+    const categories = await this.db.findCategoriesByForumId(forum.id!)
 
     for (const category of categories) {
       await this.db.updateCategory(category.id!, { pages_crawled: false })
@@ -164,21 +165,21 @@ export class DiscourseCrawler {
       for (const category of categoryList.categories) {
         await this.db.createCategory({
           category_id: category.id,
-          forum_id: forum.id,
+          forum_id: forum.id!,
           topic_url: category.topic_url,
           json: escapeJson(JSON.stringify(category)),
           pages_crawled: false,
         })
       }
 
-      await this.db.updateForum(forum.id, { categories_crawled: true })
+      await this.db.updateForum(forum.id!, { categories_crawled: true })
       logger.info('Categories committed to database')
     } else {
       logger.info(`Skipping obtaining categories`)
     }
 
     // Retrieve all created categories and crawl them
-    const categories = await this.db.findCategoriesByForumId(forum.id)
+    const categories = await this.db.findCategoriesByForumId(forum.id!)
 
     for (const category of categories) {
       await this.crawlCategory(category)
@@ -262,7 +263,7 @@ export class DiscourseCrawler {
               topic_id: topic.id,
               category_id: category.id!,
               page_excerpt_json: escapeJson(JSON.stringify(topic)),
-              topic_json: null,
+              topic_json: '',
               posts_crawled: false,
             })
           }
@@ -288,10 +289,10 @@ export class DiscourseCrawler {
    * @private
    */
   private async crawlTopics(forum: Forum): Promise<void> {
-    const categories = await this.db.findCategoriesByForumId(forum.id)
+    const categories = await this.db.findCategoriesByForumId(forum.id!)
 
     for (const category of categories) {
-      const topics = await this.db.getTopicsByCategoryId(category.id)
+      const topics = await this.db.getTopicsByCategoryId(category.id!)
       for (const topic of topics) {
         // Skip topics that have been crawled unless we're doing a full crawl
         // or if the topic was crawled before our sinceDate
@@ -348,7 +349,7 @@ export class DiscourseCrawler {
 
         let lastPostNumber = null
         if (topic.posts_crawled && !this.options?.fullCrawl) {
-          lastPostNumber = await this.db.getTopicLastPostNumber(topic.id)
+          lastPostNumber = await this.db.getTopicLastPostNumber(topic.id!)
           if (lastPostNumber) {
             baseUrl.searchParams.set('posts_after', lastPostNumber.toString())
             logger.info(`Getting posts after post number ${lastPostNumber}`)
@@ -416,13 +417,13 @@ export class DiscourseCrawler {
       if (!existingPost) {
         await this.db.createPost({
           post_id: post.id,
-          topic_id: topic.id,
+          topic_id: topic.id!,
           json: jsonPost,
         })
         updatedCount++
       } else if (!this.options?.fullCrawl) {
         try {
-          const wasUpdated = await this.db.updatePostIfEdited(existingPost.id, jsonPost)
+          const wasUpdated = await this.db.updatePostIfEdited(existingPost.id!, jsonPost)
           if (wasUpdated) {
             logger.info(`New version of post ${post.id} found in topic ${topic.id}`)
             updatedCount++

@@ -1,5 +1,6 @@
-import { DiscourseCrawler } from './crawling'
 import commandLineArgs from 'command-line-args'
+
+import { DiscourseCrawler } from './crawling.js'
 import { logger, LogLevel } from './logger.js'
 import { CommandLineOptions, CrawlerOptions } from './types/types.js'
 

@@ -1,6 +1,6 @@
 import { DuckDBConnection, DuckDBInstance } from '@duckdb/node-api'
+
 import { Category, Forum, Page, Post, Topic } from './types/types.js'
-import { withoutProjectParserOptions } from '@typescript-eslint/parser'
 
 /**
  * Database class for managing Discourse forum data in DuckDB
@@ -130,7 +130,7 @@ export class Database {
     // const rows = reader.getRows()
     const rows = reader.getRowObjects()
 
-    return rows.length > 0 ? (rows[0] as Forum) : null
+    return rows.length > 0 ? (rows[0] as unknown as Forum) : null
   }
 
   /**
@@ -149,7 +149,7 @@ export class Database {
     )
 
     const rows = reader.getRowObjects()
-    return rows[0] as Forum
+    return rows[0] as unknown as Forum
   }
 
   /**
@@ -201,7 +201,7 @@ export class Database {
       [forumId],
     )
 
-    return reader.getRowObjects() as Category[]
+    return reader.getRowObjects() as unknown as Category[]
   }
 
   /**
@@ -226,7 +226,7 @@ export class Database {
     )
 
     const rows = reader.getRowObjects()
-    return rows.length > 0 ? (rows[0] as Category) : null
+    return rows.length > 0 ? (rows[0] as unknown as Category) : null
   }
 
   /**
@@ -259,7 +259,7 @@ export class Database {
 
     const rows = reader.getRowObjects()
 
-    return rows[0] as Category
+    return rows[0] as unknown as Category
   }
 
   async updateCategory(id: number, data: Partial<Category>): Promise<void> {
@@ -318,7 +318,7 @@ export class Database {
     )
 
     const rows = reader.getRowObjects()
-    return rows.length > 0 ? (rows[0] as Category) : null
+    return rows.length > 0 ? (rows[0] as unknown as Topic) : null
   }
 
   async getTopicsByCategoryId(categoryId: number): Promise<Topic[]> {
@@ -332,7 +332,7 @@ export class Database {
       [categoryId],
     )
 
-    return reader.getRowObjects() as Topic[]
+    return reader.getRowObjects() as unknown as Topic[]
   }
 
   /**
@@ -365,7 +365,7 @@ export class Database {
 
     const rows = reader.getRowObjects()
 
-    return rows[0] as Topic
+    return rows[0] as unknown as Topic
   }
 
   /**
@@ -433,7 +433,7 @@ export class Database {
     )
 
     const rows = reader.getRowObjects()
-    return rows[0]?.max_post_number || null
+    return (rows[0]?.max_post_number as number) || null
   }
 
   /**
@@ -453,7 +453,7 @@ export class Database {
     )
 
     const rows = reader.getRowObjects()
-    return rows[0]?.latest_timestamp ? new Date(rows[0].latest_timestamp) : null
+    return rows[0]?.latest_timestamp ? new Date(rows[0].latest_timestamp as unknown as Date) : null
   }
 
   /**
@@ -475,7 +475,7 @@ export class Database {
     )
 
     const rows = reader.getRowObjects()
-    return rows.length > 0 ? (rows[0] as Post) : null
+    return rows.length > 0 ? (rows[0] as unknown as Post) : null
   }
 
   /**
@@ -499,7 +499,7 @@ export class Database {
 
     const rows = reader.getRowObjects()
 
-    return rows[0] as Post
+    return rows[0] as unknown as Post
   }
 
   /**
@@ -529,7 +529,7 @@ export class Database {
     if (rows.length === 0) return false
 
     const currentVersion = rows[0].version || 1
-    const currentUpdatedAt = rows[0].updated_at
+    const currentUpdatedAt = rows[0].updated_at as string
 
     if (
       versionNumber > currentVersion ||
@@ -569,7 +569,7 @@ export class Database {
 
     const rows = reader.getRowObjects()
 
-    return rows.length > 0 ? (rows[0] as Page) : null
+    return rows.length > 0 ? (rows[0] as unknown as Page) : null
   }
 
   /**
@@ -592,7 +592,7 @@ export class Database {
     )
 
     const rows = reader.getRowObjects()
-    return rows[0] as Page
+    return rows[0] as unknown as Page
   }
 
   /**
@@ -613,7 +613,7 @@ export class Database {
     )
 
     const rows = reader.getRowObjects()
-    return rows.length > 0 ? (rows[0] as Page) : null
+    return rows.length > 0 ? (rows[0] as unknown as Page) : null
   }
 
   /**
