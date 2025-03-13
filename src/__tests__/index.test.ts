@@ -1,18 +1,18 @@
-import { describe, it, expect, vi } from 'vitest';
-import { main } from '../index';
+import { describe, it, expect, vi } from 'vitest'
+import { main } from '../index'
 
 describe('main', () => {
   it('should log a greeting', () => {
     // Arrange
-    const consoleSpy = vi.spyOn(console, 'log');
-    
+    const consoleSpy = vi.spyOn(console, 'log')
+
     // Act
-    main();
-    
+    main()
+
     // Assert
-    expect(consoleSpy).toHaveBeenCalledWith('Hello, TypeScript!');
-    
+    expect(consoleSpy).toHaveBeenCalledWith('Hello, TypeScript!')
+
     // Cleanup
-    consoleSpy.mockRestore();
-  });
-});
+    consoleSpy.mockRestore()
+  })
+})
