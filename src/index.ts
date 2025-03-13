@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import commandLineArgs from 'command-line-args'
 
 import { DiscourseCrawler } from './crawling.js'
@@ -6,7 +8,7 @@ import { CommandLineOptions, CrawlerOptions } from './types/types.js'
 
 const optionDefinitions = [
   { name: 'url', alias: 'u', type: String },
-  { name: 'dbPath', alias: 'd', type: String },
+  { name: 'db-path', alias: 'd', type: String },
   { name: 'full', alias: 'f', type: Boolean },
   { name: 'since', alias: 's', type: String },
   { name: 'rate-limit', alias: 'r', type: Number },
@@ -21,7 +23,7 @@ async function main() {
 
     if (!options.url) {
       console.log(
-        `Usage: npm start -- --url=<discourse-url> [--dbPath=<db-path>] [--full] [--since=YYYY-MM-DD] [--rate-limit 500] [--verbose]`,
+        `Usage: discourse-crawler --url <discourse-url> [--db-path=<db-path>] [--full] [--since=YYYY-MM-DD] [--rate-limit 500] [--verbose]`,
       )
       process.exit(1)
     }

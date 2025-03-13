@@ -41,7 +41,7 @@ export class DiscourseCrawler {
   ): Promise<DiscourseCrawler> {
     const db = await Database.create(dbPath)
     const rateLimiter = new RateLimiterMemory({
-      points: this.options?.rateLimit ? Math.round(1000 / this.options?.rateLimit) : 3,
+      points: options?.rateLimit ? Math.round(1000 / options?.rateLimit) : 3,
       duration: 1,
       blockDuration: 60,
     })

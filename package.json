@@ -1,9 +1,12 @@
 {
-  "name": "discourse_crawler",
+  "name": "discourse-crawler",
   "version": "0.1.0",
-  "description": "TypeScript NodeJS project with 2025 best practices",
+  "description": "A crawler and scraper for Discourse forums",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "discourse-crawler": "./dist/index.js"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsx src/index.ts",
@@ -29,8 +32,16 @@
     ]
   },
   "keywords": [],
-  "author": "",
+  "author": "Torin Rozzelle hello@torinrozzelle.com",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/trozzelle/DiscourseCrawler"
+  },
+  "bugs": {
+    "url": "https://github.com/trozzelle/DiscourseCrawler/issues"
+  },
+  "homepage": "https://github.com/trozzelle/DiscourseCrawler#readme",
   "devDependencies": {
     "@commitlint/cli": "^19.0.0",
     "@commitlint/config-conventional": "^19.0.0",
