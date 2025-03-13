@@ -606,7 +606,7 @@ export class Database {
           SELECT *
           FROM page
           WHERE category_id = ?
-          ORDER BY page_id desc
+          ORDER BY page_id DESC
           LIMIT 1
       `,
       [categoryId],
