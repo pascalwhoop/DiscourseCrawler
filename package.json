@@ -2,10 +2,19 @@
   "name": "discourse-crawler",
   "version": "0.1.0",
   "description": "A crawler and scraper for Discourse forums",
-  "main": "dist/index.js",
+  "type": "module",
+  "main": "dist/crawler.js",
   "types": "dist/index.d.ts",
+  "module": "dist/index.js",
   "bin": {
-    "discourse-crawler": "./dist/index.js"
+    "discourse-crawler": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/crawler.js",
+      "require": "./dist/crawler.js",
+      "types": "./dist/index.d.ts"
+    }
   },
   "files": [
     "dist",
@@ -14,7 +23,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "dev": "tsx src/index.ts",
+    "dev": "tsx src/cli.ts",
     "start": "node dist/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -75,7 +84,6 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "type": "module",
   "dependencies": {
     "@duckdb/node-api": "1.2.0-alpha.15",
     "axios": "1.8.1",

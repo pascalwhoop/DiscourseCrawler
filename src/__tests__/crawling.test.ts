@@ -2,7 +2,7 @@ import axios from 'axios'
 import { RateLimiterMemory } from 'rate-limiter-flexible'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-import { DiscourseCrawler } from '../crawling.js'
+import { DiscourseCrawler } from '../crawler.js'
 import { Database } from '../database.js'
 
 vi.mock('axios')
