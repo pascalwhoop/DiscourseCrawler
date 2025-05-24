@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { RateLimiterMemory } from 'rate-limiter-flexible'
+import { URL } from 'url'
 
 import { Database } from './database.js'
 import { logger } from './logger.js'
@@ -21,7 +22,11 @@ export class DiscourseCrawler {
     rateLimiter: RateLimiterMemory,
     options: CrawlerOptions = {},
   ) {
-    this.baseUrl = baseUrl
+    const parsedUrl = new URL(baseUrl)
+    if (parsedUrl.pathname && parsedUrl.pathname !== '/' && !parsedUrl.pathname.endsWith('/')) {
+      parsedUrl.pathname += '/'
+    }
+    this.baseUrl = parsedUrl.toString()
     this.db = db
     this.rateLimiter = rateLimiter
     this.options = options
@@ -156,7 +161,7 @@ export class DiscourseCrawler {
 
     // If we've never crawled before, get category data and create categories
     if (!forum.categories_crawled) {
-      const categoriesUrl = new URL(forum.url + '/categories.json')
+      const categoriesUrl = new URL('categories.json', forum.url)
       const categoryData = await this.limitedFetch(categoriesUrl.toString())
       const categoryList = categoryData.category_list
 
@@ -214,7 +219,7 @@ export class DiscourseCrawler {
         let nextPageId: number
 
         if (lastPage === null) {
-          const urlObj = new URL(`/c/${category.category_id}.json`, this.baseUrl)
+          const urlObj = new URL(`c/${category.category_id}.json`, this.baseUrl)
           urlObj.searchParams.set('page', '0')
 
           // If there's existing topic data, we crawl topics created after
