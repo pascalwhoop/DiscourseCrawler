@@ -7,6 +7,13 @@ import { logger } from './logger.js'
 import { Category, CrawlerOptions, Forum, Topic } from './types/types.js'
 import { escapeJson } from './utils/helpers.js'
 
+
+function updatePathname(url: URL, suffix: string): URL {
+  const newPathname = url.pathname + suffix
+  url.pathname = newPathname
+  return url
+}
+
 /**
  * DiscourseCrawler class for crawling a Discourse forum instance
  */
@@ -64,27 +71,30 @@ export class DiscourseCrawler {
   private async limitedFetch(url: string, retries = 3): Promise<any> {
     try {
       await this.rateLimiter.consume('default')
-
-      // Adds rate limit delay if provided or defaults to 500ms
       const rateLimit = this.options?.rateLimit || 500
       await new Promise((resolve) => setTimeout(resolve, rateLimit))
-
       const response = await axios.get(url)
       return response.data
-    } catch (error) {
+    } catch (error: any) {
+      if (error.isAxiosError && error.response) {
+        logger.error(
+          `HTTP error fetching ${url}: ${error.response.status} ${error.response.statusText}\nResponse data: ${JSON.stringify(error.response.data)}`,
+        )
+      }
       if (error.remainingPoints !== undefined) {
         const waitTime = error.msBeforeNext || 60000
-        logger.warn(`Rate limit reached. Waiting ${waitTime / 1000} seconds before next request.`)
-
+        logger.warn(`Rate limit reached for ${url}. Waiting ${waitTime / 1000} seconds before next request.`)
         await new Promise((resolve) => setTimeout(resolve, waitTime))
-
         if (retries > 0) {
-          logger.info(`Retrying request to ${url}.`)
+          logger.info(`Retrying request to ${url} (${retries} retries left).`)
           return this.limitedFetch(url, retries - 1)
         }
+        const newError = new Error(`Rate limit retries exhausted for ${url}. Original error: ${error.message}`)
+        throw newError;
       }
-      logger.error(`Error fetching ${url}: ${error}`)
-      throw Error
+      const detailedError = new Error(`Failed to fetch ${url} after multiple retries. Original error: ${error.message}`)
+      logger.error(`${detailedError.message}\nStack: ${error.stack}`)
+      throw detailedError
     }
   }
 
@@ -92,12 +102,30 @@ export class DiscourseCrawler {
    * Main crawling method that orchestrates the entire crawling process.
    */
   async crawl(): Promise<void> {
-    const forum = await this.getForum()
+    let forum: Forum | null = null;
+    try {
+      forum = await this.getForum()
+    } catch (error: any) {
+      logger.error(`Critical error: Could not get or create forum entry for ${this.baseUrl}. Error: ${error.message}\nStack: ${error.stack}`)
+      throw new Error(`Could not initialize forum ${this.baseUrl}: ${error.message}`);
+    }
 
-    // If fullCrawl is set, reset crawled state for all Forum objects
-    if (this.options?.fullCrawl) await this.resetCrawledState(forum)
-
-    await this.crawlForum(forum)
+    if (this.options?.fullCrawl && forum) {
+      try {
+        await this.resetCrawledState(forum!)
+      } catch (error: any) {
+        logger.error(`Error resetting crawled state for forum ${forum.id}. Error: ${error.message}\nStack: ${error.stack}`)
+      }
+    }
+    if (forum) {
+        try {
+            await this.crawlForum(forum!)
+        } catch (error: any) {
+            logger.error(`An error occurred during crawlForum for ${forum.url}. Error: ${error.message}\nStack: ${error.stack}`);
+        }
+    } else {
+        logger.error(`Forum object is null, cannot proceed with crawlForum.`);
+    }
   }
 
   /**
@@ -107,31 +135,28 @@ export class DiscourseCrawler {
    */
   private async resetCrawledState(forum: Forum): Promise<void> {
     logger.info(`Resetting crawled state for forum ${forum.id}`)
-
-    await this.db.updateForum(forum.id!, { categories_crawled: false })
-
-    const categories = await this.db.findCategoriesByForumId(forum.id!)
-
-    for (const category of categories) {
-      await this.db.updateCategory(category.id!, { pages_crawled: false })
+    try {
+      await this.db.updateForum(forum.id!, { categories_crawled: false })
+      const categories = await this.db.findCategoriesByForumId(forum.id!)
+      for (const category of categories) {
+        await this.db.updateCategory(category.id!, { pages_crawled: false })
+      }
+      await this.db.query(
+        `
+            UPDATE topic t
+            SET posts_crawled   = FALSE,
+                last_crawled_at = NULL
+            FROM category c
+            WHERE t.category_id = c.id
+              AND c.forum_id = ?
+        `,
+        [forum.id],
+      )
+      logger.info('Crawled state reset complete.')
+    } catch (error: any) {
+      logger.error(`Failed to reset crawled state for forum ${forum.id}. Error: ${error.message}\nStack: ${error.stack}`)
+      throw new Error(`Failed to reset crawled state for forum ${forum.id}: ${error.message}`);
     }
-
-    // Simpler to run directly here absent adding new method
-    // Resets posts_crawled and last_crawled_at for topics
-    // for all categories at once
-    await this.db.query(
-      `
-          UPDATE topic t
-          SET posts_crawled   = FALSE,
-              last_crawled_at = NULL
-          FROM category c
-          WHERE t.category_id = c.id
-            AND c.forum_id = ?
-      `,
-      [forum.id],
-    )
-
-    logger.info('Crawled state reset.')
   }
 
   /**
@@ -140,15 +165,20 @@ export class DiscourseCrawler {
    * @private
    */
   private async getForum(): Promise<Forum> {
-    let forum = await this.db.findForum(this.baseUrl)
-
-    if (!forum) {
-      forum = await this.db.createForum({
-        url: this.baseUrl,
-        categories_crawled: false,
-      })
+    try {
+      let forum = await this.db.findForum(this.baseUrl)
+      if (!forum) {
+        logger.info(`Forum not found for ${this.baseUrl}, creating new entry.`)
+        forum = await this.db.createForum({
+          url: this.baseUrl,
+          categories_crawled: false,
+        })
+      }
+      return forum
+    } catch (error: any) {
+      logger.error(`Database error in getForum for ${this.baseUrl}. Error: ${error.message}\nStack: ${error.stack}`)
+      throw new Error(`Failed to get or create forum ${this.baseUrl} in database: ${error.message}`);
     }
-    return forum
   }
 
   /**
@@ -159,39 +189,69 @@ export class DiscourseCrawler {
   private async crawlForum(forum: Forum): Promise<void> {
     logger.info(`Starting crawling forum: ${forum.url}`)
 
-    // If we've never crawled before, get category data and create categories
-    if (!forum.categories_crawled) {
-      const categoriesUrl = new URL('categories.json', forum.url)
-      const categoryData = await this.limitedFetch(categoriesUrl.toString())
-      const categoryList = categoryData.category_list
+    if (!forum.categories_crawled || this.options?.fullCrawl) {
+      try {
+        const categoriesUrl = new URL('categories.json', forum.url)
+        logger.info(`Fetching categories from ${categoriesUrl.toString()}`)
+        const categoryData = await this.limitedFetch(categoriesUrl.toString())
 
-      logger.info(`Categories: ${Object.keys(categoryList.categories)}`)
+        if (!categoryData || !categoryData.category_list || !Array.isArray(categoryData.category_list.categories)) {
+          logger.error(`Malformed category data received from ${categoriesUrl.toString()}. Data: ${JSON.stringify(categoryData)}`)
+          throw new Error(`Malformed category data from ${categoriesUrl.toString()}`);
+        }
+        const categoryList = categoryData.category_list
+        logger.info(`Found ${categoryList.categories.length} categories for forum ${forum.url}.`)
 
-      for (const category of categoryList.categories) {
-        await this.db.createCategory({
-          category_id: category.id,
-          forum_id: forum.id!,
-          topic_url: category.topic_url,
-          json: escapeJson(JSON.stringify(category)),
-          pages_crawled: false,
-        })
+        for (const category of categoryList.categories) {
+          try {
+            await this.db.createCategory({
+              category_id: category.id,
+              forum_id: forum.id!,
+              topic_url: category.topic_url,
+              json: escapeJson(JSON.stringify(category)),
+              pages_crawled: false,
+            })
+          } catch (error: any) {
+            logger.error(
+              `Failed to create category ID ${category.id} (${category.slug}) in database for forum ${forum.url}. Error: ${error.message}\nStack: ${error.stack}`,
+            )
+          }
+        }
+        await this.db.updateForum(forum.id!, { categories_crawled: true })
+        logger.info('Categories committed to database and forum marked as categories_crawled.')
+      } catch (error: any) {
+        logger.error(
+          `Failed to fetch or process categories for forum ${forum.url}. Error: ${error.message}\nStack: ${error.stack}`,
+        )
+        if (!forum.categories_crawled) {
+            throw new Error(`Critical: Could not fetch initial categories for ${forum.url}. ${error.message}`);
+        }
       }
-
-      await this.db.updateForum(forum.id!, { categories_crawled: true })
-      logger.info('Categories committed to database')
     } else {
-      logger.info(`Skipping obtaining categories`)
+      logger.info(`Skipping fetching categories for forum ${forum.url} as they are already marked crawled.`)
     }
 
-    // Retrieve all created categories and crawl them
     const categories = await this.db.findCategoriesByForumId(forum.id!)
+    logger.info(`Proceeding to crawl ${categories.length} categories found in DB for forum ${forum.url}.`)
 
     for (const category of categories) {
-      await this.crawlCategory(category)
+      try {
+        await this.crawlCategory(category)
+      } catch (error: any) {
+        logger.error(
+          `Failed to crawl category ID ${category.category_id} for forum ${forum.url}. Error: ${error.message}\nStack: ${error.stack}`,
+        )
+      }
     }
 
-    // Then crawl all topics
-    await this.crawlTopics(forum)
+    logger.info(`Finished crawling categories. Proceeding to crawl topics for forum ${forum.url}.`)
+    try {
+      await this.crawlTopics(forum)
+    } catch (error: any) {
+        logger.error(
+          `An error occurred during crawlTopics for forum ${forum.url}. Error: ${error.message}\nStack: ${error.stack}`,
+        );
+    }
 
     logger.info(`Completed crawling forum ${forum.id}`)
   }
@@ -319,24 +379,6 @@ export class DiscourseCrawler {
         await this.crawlTopic(topic)
       }
     }
-
-    // for (const category of categories) {
-    //   const topics = await this.db.getTopicsByCategoryId(category.id)
-    //   for (const topic of topics) {
-    //     if (topic.posts_crawled && !this.options?.fullCrawl) {
-    //       if (this.options?.sinceDate && topic.last_crawled_at) {
-    //         const lastCrawled = new Date(topic.last_crawled_at)
-    //         if (lastCrawled >= this.options.sinceDate) {
-    //           logger.info(
-    //             `Skipping topic ${topic.topic_id}. Already crawled since ${this.options.sinceDate}`,
-    //           )
-    //           continue
-    //         }
-    //       }
-    //     }
-    //     await this.crawlTopic(topic)
-    //   }
-    // }
   }
 
   /**
@@ -347,10 +389,12 @@ export class DiscourseCrawler {
   private async crawlTopic(topic: Topic): Promise<void> {
     logger.info(`Crawling topic ${topic.topic_id}`)
 
+    logger.info(this.baseUrl)
+
     if (!topic.posts_crawled) {
       try {
         const baseUrl = new URL(this.baseUrl)
-        baseUrl.pathname = `/t/${topic.topic_id}.json`
+        updatePathname(baseUrl, `/t/${topic.topic_id}.json`)
 
         let lastPostNumber = null
         if (topic.posts_crawled && !this.options?.fullCrawl) {
@@ -362,6 +406,7 @@ export class DiscourseCrawler {
         }
 
         const url = baseUrl.toString()
+
         const jsonTopic = await this.limitedFetch(url)
 
         await this.db.updateTopic(topic.id!, {
@@ -375,8 +420,8 @@ export class DiscourseCrawler {
         while (remainingPosts.length > 0) {
           const nextPosts = remainingPosts.slice(0, 20)
 
-          const urlObj = baseUrl
-          urlObj.pathname = `/t/${topic.topic_id}/posts.json`
+          const urlObj = new URL(this.baseUrl)
+          updatePathname(urlObj, `/t/${topic.topic_id}/posts.json`)
           urlObj.searchParams.set('post_ids[]', nextPosts)
           urlObj.searchParams.set('include_suggested', 'true')
 
